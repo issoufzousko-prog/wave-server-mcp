@@ -1,0 +1,136 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Wave Server MCP — Passerelle Mobile Money & Family Officer",
+    "description": "API REST et Passerelle USSD Android permettant à ChatGPT, Claude et Gemini de contrôler Wave Mobile Money sans câble USB.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8765",
+      "description": "Serveur local Termux"
+    }
+  ],
+  "paths": {
+    "/api/solde": {
+      "get": {
+        "operationId": "consulterSoldeWave",
+        "summary": "Consulter le solde certifié Wave",
+        "description": "Récupère le solde Wave actuel via la commande USSD officielle *9113# ou l'extraction SMS certifiée.",
+        "responses": {
+          "200": {
+            "description": "Solde certifié retourné",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statut": { "type": "string" },
+                    "balance": { "type": "integer", "description": "Solde disponible en FCFA" },
+                    "currency": { "type": "string", "example": "FCFA" },
+                    "retrieved_at": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluer-transfert": {
+      "post": {
+        "operationId": "evaluerImpactTransfert",
+        "summary": "Arbitrage et gouvernance Family Officer avant transfert",
+        "description": "Évalue si le transfert préserve le sanctuaire d'urgence (25 000 FCFA), calcule le solde résiduel et retourne les alertes de sécurité.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["montant_fcfa", "numero_destinataire"],
+                "properties": {
+                  "montant_fcfa": { "type": "integer", "description": "Montant du transfert en FCFA", "example": 5000 },
+                  "numero_destinataire": { "type": "string", "description": "Numéro du bénéficiaire", "example": "0701020304" },
+                  "motif": { "type": "string", "description": "Motif de l'opération", "example": "Dépannage famille" },
+                  "categorie": {
+                    "type": "string",
+                    "enum": ["charge_vitale", "urgence_sante", "depannage_famille", "tontine_epargne", "achat_plaisir", "inconnu"],
+                    "default": "depannage_famille"
+                  },
+                  "reserve_minimale_fcfa": { "type": "integer", "default": 25000, "description": "Réserve de sécurité en FCFA" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Avis et arbitrage du Family Officer"
+          }
+        }
+      }
+    },
+    "/api/transferer": {
+      "post": {
+        "operationId": "transfererArgentWave",
+        "summary": "Exécuter un transfert d'argent Wave via USSD",
+        "description": "Compose la commande USSD *9113*1*NUMERO*MONTANT*PIN# sur le smartphone Android.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["numero_destinataire", "montant_fcfa"],
+                "properties": {
+                  "numero_destinataire": { "type": "string", "description": "Numéro de téléphone du destinataire Wave", "example": "0701020304" },
+                  "montant_fcfa": { "type": "integer", "description": "Montant en FCFA à transférer", "example": 2000 },
+                  "code_secret": { "type": "string", "description": "Code secret Wave (si non défini dans WAVE_CODE_SECRET)", "example": "1234" },
+                  "motif": { "type": "string", "description": "Motif du transfert", "default": "Transfert Wave" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ordre USSD transmis avec succès"
+          }
+        }
+      }
+    },
+    "/api/sms": {
+      "get": {
+        "operationId": "lireSmsWave",
+        "summary": "Lire les SMS de transactions Wave",
+        "description": "Extrait les derniers SMS reçus de Wave pour vérifier les accusés de réception et les dépôts.",
+        "parameters": [
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 10 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Liste des transactions SMS Wave"
+          }
+        }
+      }
+    },
+    "/api/statut": {
+      "get": {
+        "operationId": "obtenirStatutTelephone",
+        "summary": "État du smartphone Android",
+        "description": "Retourne le niveau de batterie, l'adresse IP et l'état des services Termux.",
+        "responses": {
+          "200": {
+            "description": "Statut de l'appareil"
+          }
+        }
+      }
+    }
+  }
+}

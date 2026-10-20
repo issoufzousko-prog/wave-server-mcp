@@ -1438,6 +1438,23 @@ class GestionnaireRequetesHTTP(BaseHTTPRequestHandler):
             message_init = f"event: endpoint\ndata: /mcp\n\n".encode("utf-8")
             self.wfile.write(message_init)
 
+        # 9. Spécification OpenAPI pour ChatGPT Custom Actions
+        elif chemin in ("/openapi.json", "/api/openapi.json"):
+            chemin_openapi = os.path.join(os.path.dirname(os.path.abspath(__file__)), "openapi.json")
+            if os.path.exists(chemin_openapi):
+                try:
+                    with open(chemin_openapi, "r", encoding="utf-8") as f:
+                        spec = json.load(f)
+                    hote = self.headers.get("Host")
+                    if hote:
+                        proto = "https" if ("trycloudflare.com" in hote or "ngrok" in hote) else "http"
+                        spec["servers"] = [{"url": f"{proto}://{hote}", "description": "Passerelle Wave MCP active"}]
+                    self._envoyer_reponse_json(spec)
+                except Exception as e:
+                    self._envoyer_reponse_json({"erreur": f"Erreur lecture openapi.json : {e}"}, statut=500)
+            else:
+                self._envoyer_reponse_json({"erreur": "Spécification openapi.json introuvable sur le serveur"}, statut=404)
+
         else:
             self._envoyer_reponse_json({"erreur": "Route introuvable"}, statut=404)
 
@@ -1503,6 +1520,22 @@ class GestionnaireRequetesHTTP(BaseHTTPRequestHandler):
                 montant_fcfa=montant,
                 code_secret=code_secret,
                 motif=motif
+            )
+            self._envoyer_reponse_json(res)
+
+        # 8. Action REST : Évaluation d'impact Family Officer (pour ChatGPT Actions)
+        elif chemin == "/api/evaluer-transfert":
+            montant = donnees_json.get("montant_fcfa", 0)
+            numero = donnees_json.get("numero_destinataire", "")
+            motif = donnees_json.get("motif", "Dépannage famille")
+            categorie = donnees_json.get("categorie", "depannage_famille")
+            reserve = donnees_json.get("reserve_minimale_fcfa", 25000)
+            res = GestionnaireMaterielAndroid.evaluer_impact_transfert_wave(
+                montant_fcfa=montant,
+                numero_destinataire=numero,
+                motif=motif,
+                categorie=categorie,
+                reserve_minimale_fcfa=reserve
             )
             self._envoyer_reponse_json(res)
 
