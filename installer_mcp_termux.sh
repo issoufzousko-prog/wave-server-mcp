@@ -35,7 +35,12 @@ echo "----------------------------------------------------------"
 echo " Voulez-vous activer le tunnel Cloudflare pour ChatGPT ? "
 echo " (Permet à ChatGPT Cloud d'accéder au téléphone sans câble)"
 echo "----------------------------------------------------------"
-read -p "Activer Cloudflare Tunnel ? (o/n, défaut: o) : " REP_TUNNEL
+if [ "$1" = "--auto" ] || [ "$1" = "-y" ]; then
+    REP_TUNNEL="o"
+else
+    # Timeout de 8 secondes pour ne pas bloquer si lancé en tâche automatisée
+    read -t 8 -p "Activer Cloudflare Tunnel ? (o/n, défaut: o dans 8s) : " REP_TUNNEL || REP_TUNNEL="o"
+fi
 REP_TUNNEL=${REP_TUNNEL:-o}
 
 if [ "$REP_TUNNEL" = "o" ] || [ "$REP_TUNNEL" = "O" ]; then
@@ -46,9 +51,11 @@ if [ "$REP_TUNNEL" = "o" ] || [ "$REP_TUNNEL" = "O" ]; then
     if command -v cloudflared &> /dev/null; then
         echo "[✓] Lancement de cloudflared tunnel en tâche de fond..."
         cloudflared tunnel --url http://localhost:8765 > tunnel.log 2>&1 &
-        sleep 4
+        sleep 5
         URL_TUNNEL=$(grep -o 'https://[-a-zA-Z0-9.]*\.trycloudflare\.com' tunnel.log | head -n 1 || true)
         if [ -n "$URL_TUNNEL" ]; then
+            echo "$URL_TUNNEL" > tunnel_url.txt
+            echo "$URL_TUNNEL" > /sdcard/Download/wave_tunnel_url.txt 2>/dev/null || true
             echo ""
             echo "=========================================================="
             echo " 🌐 URL PUBLIQUE POUR CHATGPT & ACTIONS : $URL_TUNNEL"
