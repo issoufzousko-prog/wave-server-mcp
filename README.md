@@ -1,75 +1,80 @@
 <p align="center">
-  <img src="assets/wave-server-mcp-logo.png" alt="Wave Server MCP Logo" width="200"/>
+  <img src="assets/wave-server-mcp-logo.png" alt="Wave Server MCP Logo" width="190"/>
 </p>
 
 # 🐧 Wave Server MCP
 
-> **Serveur MCP (Model Context Protocol) Android sans fil pour Wave Mobile Money (Côte d'Ivoire & zone UEMOA)**  
-> Contrôlez, automatisez et interrogez votre compte Wave directement depuis vos agents IA (Claude Desktop, Antigravity IDE, Cursor) via Wi-Fi — **sans câble USB ADB** et **sans fuite cloud**.
+> **Serveur MCP (Model Context Protocol) pour Android permettant de connecter des modèles d'IA en interface (ChatGPT, Claude, Gemini, Cursor, Antigravity) à Wave Mobile Money via requêtes USSD directes.**
+
+Contrôlez et automatisez vos opérations Wave (solde, transferts, SMS de confirmation, capture) en langage naturel directement depuis votre chat d'IA préféré, sans aucun câble USB ADB.
 
 ---
 
-## 🌟 Points forts
+## 🎯 Contexte & Objectif
 
-- 📶 **100 % Sans Fil** : Plus besoin de câble USB ni de mode débogage ADB filaire permanent. Le smartphone tourne sur Termux et communique en Wi-Fi local ou Hotspot.
-- 🪶 **Zéro Dépendance pip sur Android** : Le serveur utilise exclusivement la bibliothèque standard Python 3 et les commandes de `termux-api`.
-- 🔌 **Protocole Officiel MCP JSON-RPC 2.0** : Outils (`tools`), ressources (`resources`) et prompts déclarés selon les spécifications Model Context Protocol.
-- ⚡ **Pont STDIO Universel** : Relais bidirectionnel prêt pour Claude Desktop, Antigravity IDE, Cursor et tout client MCP stdio.
-- 🔒 **Souverain & Sécurisé** : Aucune donnée bancaire ne transite par des serveurs tiers. Tout reste strictement sur votre réseau local.
+Les assistants IA comme **ChatGPT**, **Claude Desktop** ou **Gemini** ne disposent pas d'accès direct aux réseaux télécoms ni aux services de Mobile Money africains.
+
+**Wave Server MCP** résout ce problème en transformant votre smartphone Android (via Termux) en un serveur MCP autonome. Il expose les commandes USSD officielles de Wave sous forme d'outils standardisés que n'importe quel LLM compatible MCP peut appeler en temps réel :
+
+```
+┌────────────────────────────────────────────────────────┐
+│     Modèles d'IA / Interfaces Conversationnelles        │
+│          (ChatGPT, Claude, Gemini, Antigravity)         │
+└───────────────────────────┬────────────────────────────┘
+                            │ Protocole MCP (JSON-RPC)
+                            │ (Via pont STDIO ou HTTP)
+┌───────────────────────────▼────────────────────────────┐
+│         Serveur MCP Android (Termux en Wi-Fi)          │
+│                serveur_mcp_telephone.py                │
+└───────────────────────────┬────────────────────────────┘
+                            │ Exécution native Android
+                            │ (Termux:API / Telephony)
+┌───────────────────────────▼────────────────────────────┐
+│             Requêtes USSD Wave & Système               │
+│        *9113# (Solde) | *9113*1*...# (Transferts)      │
+└────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 🛠️ Outils MCP disponibles
+## 🛠️ Outils MCP exposés aux modèles d'IA
 
-| Outil MCP | Description | Mécanisme |
+| Nom de l'outil MCP | Description pour le LLM | Mécanisme USSD / Système |
 |---|---|---|
-| `consulter_solde_wave` | Récupère le solde certifié Wave en temps réel | USSD natif `*9113#` ou capture OCR locale |
-| `transferer_argent_wave` | Effectue un transfert d'argent sécurisé vers un destinataire | Automatisation USSD avec code secret |
-| `lire_derniers_sms_wave` | Lit et filtre les SMS officiels reçus de Wave | API Termux SMS (`termux-sms-list`) |
-| `lire_notifications_wave` | Intercepte les notifications push de l'application Wave | API Termux Notification |
-| `capturer_ecran` | Capture l'écran de l'appareil Android en temps réel | `screencap` encodé en base64 |
-| `obtenir_statut_telephone` | Retourne l'état de la batterie, du Wi-Fi et de l'appareil | Sondes matérielles Termux |
-| `lancer_application_wave` | Ouvre l'application Wave au premier plan | Monkey runner Android |
-| `vibrer_telephone` | Fait vibrer le téléphone (accusé de réception ou alerte) | Termux Vibrate API |
+| `consulter_solde_wave` | Consulte le solde Wave officiel en direct | Exécute la requête USSD `*9113#` ou extrait le dernier SMS de solde |
+| `transferer_argent_wave` | Envoie de l'argent Wave vers un numéro destinataire | Exécute la commande USSD `*9113*1*NUMERO*MONTANT*PIN#` |
+| `lire_sms_wave` | Récupère et filtre les SMS de transaction reçus de Wave | Lecture directe des SMS Android (`termux-sms-list`) |
+| `lire_notifications_wave` | Intercepte les notifications push actives de l'app Wave | Écouteur de notifications Android |
+| `capturer_ecran_telephone` | Capture l'écran du smartphone en direct (PNG Base64) | Capture native Android (`screencap`) |
+| `analyser_ui_telephone` | Inspecte l'arborescence UI des éléments Wave à l'écran | Dump d'accessibilité UI (`uiautomator dump`) |
+| `lancer_application` | Ouvre l'application Wave (`com.wave.personal`) | Lanceur Intent Android |
+| `statut_telephone` | Remonte l'état de la batterie, du Wi-Fi et de l'appareil | Sondes matérielles Termux |
+| `reveiller_telephone` | Réveille l'écran et garde l'appareil actif | Wake-lock et keyevent Android |
 
 ---
 
-## 🏗️ Architecture du système
+## ⚡ Exemples de requêtes utilisateur vers l'IA
 
-```
-┌─────────────────────────────────┐        Wi-Fi Local         ┌─────────────────────────────────┐
-│            Ordinateur           │ ◄────────────────────────► │        Smartphone Android       │
-│                                 │                            │             (Termux)            │
-│  ┌───────────────────────────┐  │                            │  ┌───────────────────────────┐  │
-│  │   Agent IA                │  │                            │  │  serveur_mcp_             │  │
-│  │   (Claude, Antigravity)   │  │   MCP JSON-RPC 2.0 HTTP    │  │  telephone.py             │  │
-│  └─────────────┬─────────────┘  │   (port 8765)              │  │  (Serveur HTTP multithread│  │
-│                │ stdio          │◄──────────────────────────►│  └─────────────┬─────────────┘  │
-│  ┌─────────────▼─────────────┐  │                            │                │ Termux:API     │
-│  │  pont_mcp_stdio_          │  │                            │  ┌─────────────▼─────────────┐  │
-│  │  telephone.py             │  │                            │  │  Application Wave / USSD  │  │
-│  └───────────────────────────┘  │                            │  │  SMS & Système Android    │  │
-│                                 │                            │  └───────────────────────────┘  │
-└─────────────────────────────────┘                            └─────────────────────────────────┘
-```
+Dès que le serveur MCP est connecté à votre IA :
+
+- 💬 *"Quel est mon solde Wave actuel ?"*  
+  ➔ L'IA appelle `consulter_solde_wave()` qui compose `*9113#` et vous répond : *"Votre solde Wave est de 45 200 FCFA."*
+
+- 💬 *"Envoie 2 000 FCFA au 0701020304 pour le repas."*  
+  ➔ L'IA appelle `transferer_argent_wave(numero_destinataire="0701020304", montant_fcfa=2000)` via la commande USSD sécurisée.
+
+- 💬 *"Montre-moi les 3 derniers SMS de transactions Wave."*  
+  ➔ L'IA appelle `lire_sms_wave(limite=3)` et affiche le détail des transferts récents.
 
 ---
 
 ## 🚀 Installation & Démarrage
 
-### Étape 1 : Prérequis sur le smartphone Android
+### 1. Sur votre smartphone Android
 
-1. Installez **[Termux](https://f-droid.org/fr/packages/com.termux/)** depuis F-Droid (évitez la version obsolète du Play Store).
-2. Installez **[Termux:API](https://f-droid.org/fr/packages/com.termux.api/)** depuis F-Droid.
-3. Ouvrez les Paramètres Android → Applications → Termux:API et accordez les autorisations :
-   - SMS (lecture)
-   - Téléphone / Appels (USSD)
-   - Notifications (accès)
-   - Stockage
-
-### Étape 2 : Lancer le serveur sur Termux (en 1 commande)
-
-Ouvrez Termux sur votre téléphone et exécutez :
+1. Téléchargez et installez **[Termux](https://f-droid.org/fr/packages/com.termux/)** et **[Termux:API](https://f-droid.org/fr/packages/com.termux.api/)** depuis F-Droid.
+2. Dans les paramètres Android de Termux:API, accordez les permissions : Téléphone (Appels USSD), SMS, Notifications.
+3. Lancez dans Termux :
 
 ```bash
 pkg update -y && pkg install -y git python termux-api
@@ -79,42 +84,33 @@ chmod +x installer_mcp_termux.sh
 ./installer_mcp_termux.sh
 ```
 
-Ou démarrez directement le serveur Python :
-
-```bash
-python serveur_mcp_telephone.py --port=8765
-```
-
-Le serveur s'initialise et affiche son adresse IP locale (ex: `http://192.168.1.50:8765`).
+Le serveur démarre sur le port `8765` et affiche son adresse IP (ex: `http://192.168.1.50:8765`).
 
 ---
 
-## 💻 Configuration côté PC / IDE
+## 🔌 Connexion aux interfaces IA (ChatGPT, Claude, Gemini)
 
-### Option A : Intégration Claude Desktop (`claude_desktop_config.json`)
-
-Ajoutez cette configuration dans votre fichier `claude_desktop_config.json` :
+### Claude Desktop (`claude_desktop_config.json`)
 
 ```json
 {
   "mcpServers": {
-    "wave-telephone": {
+    "wave-mcp": {
       "command": "python",
       "args": [
-        "/chemin/absolu/vers/wave-server-mcp/pont_mcp_stdio_telephone.py"
+        "/chemin/vers/wave-server-mcp/pont_mcp_stdio_telephone.py"
       ],
       "env": {
         "IP_TELEPHONE": "192.168.1.50",
-        "PORT_TELEPHONE": "8765"
+        "PORT_TELEPHONE": "8765",
+        "WAVE_CODE_SECRET": "VOTRE_CODE_PIN"
       }
     }
   }
 }
 ```
 
-### Option B : Intégration Antigravity IDE (`mcp_config.json`)
-
-Dans votre fichier `.agents/mcp_config.json` :
+### Antigravity IDE / Cursor (`.agents/mcp_config.json`)
 
 ```json
 {
@@ -126,53 +122,38 @@ Dans votre fichier `.agents/mcp_config.json` :
       ],
       "env": {
         "IP_TELEPHONE": "192.168.1.50",
-        "PORT_TELEPHONE": "8765"
+        "PORT_TELEPHONE": "8765",
+        "WAVE_CODE_SECRET": "VOTRE_CODE_PIN"
       }
     }
   }
 }
 ```
 
----
+### ChatGPT / Gemini (via API ou Actions REST)
 
-## 🐍 Utilisation directe avec le client Python
-
-Un client Python (`client_mcp.py`) est fourni pour interroger facilement le smartphone depuis n'importe quel script :
-
-```python
-from client_mcp import ServiceClientMcpTelephone
-
-client = ServiceClientMcpTelephone()
-
-# Tester la connexion
-sante = client.verifier_sante()
-print("Statut téléphone :", sante)
-
-# Consulter le solde Wave via USSD
-resultat_solde = client.executer_outil_mcp("consulter_solde_wave", {})
-print("Solde Wave :", resultat_solde)
-
-# Lire les 5 derniers SMS
-sms = client.executer_outil_mcp("lire_derniers_sms_wave", {"limite": 5})
-print("Derniers SMS :", sms)
-```
+Le serveur expose également des endpoints HTTP directs pour les modèles ou connecteurs webhooks :
+- `POST /mcp` : Endpoint standard JSON-RPC 2.0
+- `GET /api/solde` : Solde Wave instantané
+- `POST /api/transfert` : Transfert d'argent USSD
+- `GET /api/sms` : Liste des derniers SMS de transactions
 
 ---
 
-## 🔒 Confidentialité & Sécurité
+## 🔒 Sécurité & Confidentialité
 
-- Aucune clé d'API ni code secret n'est inclus par défaut dans ce dépôt.
-- Les identifiants USSD (code PIN Wave) sont gérés exclusivement via votre fichier `.env` local.
-- Les communications ont lieu à l'intérieur de votre réseau Wi-Fi local sans accès extérieur.
+- **Aucune dépendance externe requise** sur Android : s'exécute avec Python 3 natif.
+- **Code PIN sanctuarisé** : Le code secret USSD est stocké localement dans vos variables d'environnement (`.env`) et n'apparaît jamais dans les logs.
+- **Réseau 100% local** : Les requêtes transitent directement entre votre PC et votre téléphone via le Wi-Fi local sans passer par aucun serveur cloud.
 
 ---
 
 ## 📄 Licence
 
-Ce projet est sous licence [MIT](LICENSE) — Libre d'utilisation, de modification et d'intégration.
+Distribué sous licence [MIT](LICENSE).
 
 ---
 
 <p align="center">
-  <img src="assets/wave-server-mcp-logo.png" alt="Wave Server MCP Mascot" width="150"/>
+  <img src="assets/wave-server-mcp-logo.png" alt="Wave Server MCP Mascot" width="140"/>
 </p>
