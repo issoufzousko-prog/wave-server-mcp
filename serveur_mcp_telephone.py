@@ -562,6 +562,96 @@ class GestionnaireMaterielAndroid:
             )
         }
 
+    @classmethod
+    def evaluer_impact_transfert_wave(
+        cls,
+        montant_fcfa: int,
+        numero_destinataire: str,
+        motif: str = "",
+        categorie: str = "depannage_famille",
+        reserve_minimale_fcfa: int = 25000
+    ) -> Dict[str, Any]:
+        """
+        Analyse de gouvernance et d'arbitrage du Family Officer avant tout transfert Wave.
+        Respecte rigoureusement le modèle à 4 états (succes, alerte_reserve_entamee, refus_solde_insuffisant, erreur_technique).
+        """
+        try:
+            montant = int(montant_fcfa)
+            frais_estimes = max(0, int(montant * 0.01))
+            total_preleve = montant + frais_estimes
+
+            solde_actuel = cls.extraire_solde_dernier_sms()
+            solde_apres = (solde_actuel - total_preleve) if solde_actuel is not None else None
+
+            # 1. ÉTAT : REFUS (Solde insuffisant)
+            if solde_actuel is not None and total_preleve > solde_actuel:
+                return {
+                    "statut": "refus_solde_insuffisant",
+                    "autorise_par_officer": False,
+                    "montant_demande_fcfa": montant,
+                    "frais_wave_estimes_fcfa": frais_estimes,
+                    "total_debit_prevu_fcfa": total_preleve,
+                    "solde_actuel_certifie_fcfa": solde_actuel,
+                    "deficit_fcfa": total_preleve - solde_actuel,
+                    "avis_officer": (
+                        f"⛔ Refus du Family Officer : Solde disponible ({solde_actuel:,} FCFA) insuffisant "
+                        f"pour couvrir ce transfert de {montant:,} FCFA (+ {frais_estimes:,} FCFA de frais)."
+                    ),
+                    "recommandation": "Différer l'opération ou ajuster le montant au solde réel disponible."
+                }
+
+            # 2. ÉTAT : ALERTE (Sanctuaire entamé)
+            elif solde_actuel is not None and solde_apres < reserve_minimale_fcfa:
+                danger_critique = solde_apres < 5000
+                return {
+                    "statut": "alerte_reserve_entamee",
+                    "autorise_par_officer": not danger_critique,
+                    "niveau_alerte": "critique" if danger_critique else "vigilance",
+                    "montant_demande_fcfa": montant,
+                    "frais_wave_estimes_fcfa": frais_estimes,
+                    "total_debit_prevu_fcfa": total_preleve,
+                    "solde_actuel_certifie_fcfa": solde_actuel,
+                    "solde_restant_apres_fcfa": solde_apres,
+                    "sanctuaire_urgence_fcfa": reserve_minimale_fcfa,
+                    "ecart_sanctuaire_fcfa": reserve_minimale_fcfa - solde_apres,
+                    "avis_officer": (
+                        f"⚠️ Alerte Vigilance Family Officer : Ce transfert entame votre réserve de sécurité "
+                        f"({reserve_minimale_fcfa:,} FCFA). Votre solde résiduel ne sera plus que de {solde_apres:,} FCFA. "
+                        + ("🚨 Niveau CRITIQUE : risque d'impossibilité de subvenir aux besoins vitaux !" if danger_critique else "Confirmez uniquement s'il s'agit d'une priorité avérée.")
+                    ),
+                    "questions_a_confirmer": [
+                        f"Êtes-vous certain de vouloir réduire votre réserve d'urgence à {solde_apres:,} FCFA ?",
+                        f"Ce dépannage peut-il être réduit ou différé ?",
+                        f"Le numéro {numero_destinataire} est-il certifié (vérification anti-fraude) ?"
+                    ]
+                }
+
+            # 3. ÉTAT : SUCCÈS (Feu vert)
+            else:
+                return {
+                    "statut": "succes",
+                    "autorise_par_officer": True,
+                    "montant_demande_fcfa": montant,
+                    "frais_wave_estimes_fcfa": frais_estimes,
+                    "total_debit_prevu_fcfa": total_preleve,
+                    "solde_actuel_certifie_fcfa": solde_actuel,
+                    "solde_restant_apres_fcfa": solde_apres,
+                    "sanctuaire_urgence_preserve": True if solde_apres is not None else "a_verifier_apres_ussd",
+                    "avis_officer": (
+                        f"✅ Feu vert du Family Officer : L'opération est compatible avec votre équilibre financier. "
+                        f"Votre sanctuaire d'urgence est préservé (solde restant estimé : {solde_apres:,} FCFA)."
+                        if solde_apres is not None else
+                        f"ℹ️ Feu vert sous réserve : Solde non extrait des SMS, vérification en direct via USSD."
+                    ),
+                    "recommandation": f"Vous pouvez confirmer le transfert vers le {numero_destinataire}."
+                }
+        except Exception as e:
+            # 4. ÉTAT : ERREUR
+            return {
+                "statut": "erreur_technique",
+                "autorise_par_officer": False,
+                "erreur": f"Échec d'évaluation financière : {str(e)}"
+            }
 
     @classmethod
     def extraire_solde_dernier_sms(cls) -> Optional[int]:
@@ -799,8 +889,83 @@ class GestionnaireProtocoleMCP:
                 },
                 "required": ["texte"]
             }
+        },
+        {
+            "name": "evaluer_impact_transfert_wave",
+            "description": "Gouvernance et arbitrage du Family Officer : évalue l'impact financier d'un transfert ou d'une dépense Wave avant exécution (vérifie le solde résiduel, le sanctuaire d'urgence de 25 000 FCFA et la viabilité budgétaire).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "montant_fcfa": {
+                        "type": "integer",
+                        "description": "Montant du transfert en FCFA."
+                    },
+                    "numero_destinataire": {
+                        "type": "string",
+                        "description": "Numéro de téléphone du bénéficiaire."
+                    },
+                    "motif": {
+                        "type": "string",
+                        "description": "Raison ou contexte de l'opération (ex: Loyer, Santé, Dépannage cousin, Tontine).",
+                        "default": "Dépannage famille"
+                    },
+                    "categorie": {
+                        "type": "string",
+                        "description": "Catégorie de la dépense.",
+                        "enum": ["charge_vitale", "urgence_sante", "depannage_famille", "tontine_epargne", "achat_plaisir", "inconnu"],
+                        "default": "depannage_famille"
+                    },
+                    "reserve_minimale_fcfa": {
+                        "type": "integer",
+                        "description": "Seuil minimal du sanctuaire d'urgence à préserver en FCFA (défaut: 25000).",
+                        "default": 25000
+                    }
+                },
+                "required": ["montant_fcfa", "numero_destinataire"]
+            }
         }
     ]
+
+    PROMPTS_DISPONIBLES = [
+        {
+            "name": "family_officer_wave",
+            "description": "Active la posture de Family Officer et Protecteur Financier pour Wave Mobile Money : gouvernance de l'argent, sanctuarisation de l'épargne d'urgence, vérification anti-fraude et arbitrage bienveillant des dépenses.",
+            "arguments": [
+                {
+                    "name": "prenom_utilisateur",
+                    "description": "Prénom ou nom de l'utilisateur.",
+                    "required": False
+                },
+                {
+                    "name": "reserve_urgence_fcfa",
+                    "description": "Montant du sanctuaire d'urgence en FCFA (défaut: 25000).",
+                    "required": False
+                }
+            ]
+        }
+    ]
+
+    DOCTRINE_FAMILY_OFFICER = """# DOCTRINE DU FAMILY OFFICER WAVE MOBILE MONEY
+
+Vous êtes le **Family Officer et Protecteur Financier Souverain** de l'utilisateur et de sa famille.
+Votre rôle est de veiller sur chaque franc CFA avec rigueur, bienveillance et prudence.
+
+## RÈGLES DE GOUVERNANCE INVIOLABLES :
+1. LE SANCTUAIRE D'URGENCE (25 000 FCFA MINIMUM) :
+   - Chaque compte doit impérativement conserver une réserve de sécurité d'au moins 25 000 FCFA.
+   - Ne jamais valider un transfert futile s'il entame ce sanctuaire vital.
+
+2. PROTOCOLE OBLIGATOIRE EN 3 POINTS AVANT TOUT TRANSFERT :
+   - Étape 1 : Vérifier le solde disponible via l'outil 'consulter_solde_wave' (USSD *9113# ou SMS).
+   - Étape 2 : Évaluer l'impact budgétaire avec 'evaluer_impact_transfert_wave'.
+   - Étape 3 : Demander une confirmation explicite à l'utilisateur en rappelant le solde restant estimé avant d'appeler 'transferer_argent_wave'.
+
+3. SOLIDARITÉ FAMILIALE ÉQUILIBRÉE :
+   - Aider l'utilisateur à soutenir ses proches (dépannages, tontines) sans jamais se mettre en danger financier.
+
+4. BOUCLIER ANTI-ARNAQUE :
+   - Toujours vérifier l'authenticité des messages et se méfier des faux SMS Wave ou des transferts sous pression émotionnelle.
+"""
 
     @classmethod
     def traiter_requete_jsonrpc(cls, requete: Dict[str, Any]) -> Dict[str, Any]:
@@ -822,7 +987,8 @@ class GestionnaireProtocoleMCP:
                     },
                     "capabilities": {
                         "tools": {"listChanged": False},
-                        "resources": {"subscribe": False, "listChanged": False}
+                        "resources": {"subscribe": False, "listChanged": False},
+                        "prompts": {"listChanged": False}
                     }
                 }
             }
@@ -855,6 +1021,11 @@ class GestionnaireProtocoleMCP:
                 "result": {
                     "resources": [
                         {
+                            "uri": "wave://family-officer/doctrine",
+                            "name": "Doctrine & Charte du Family Officer Wave",
+                            "mimeType": "text/markdown"
+                        },
+                        {
                             "uri": "telephone://statut",
                             "name": "État Matériel Smartphone",
                             "mimeType": "application/json"
@@ -872,6 +1043,126 @@ class GestionnaireProtocoleMCP:
                     ]
                 }
             }
+
+        # 6. LECTURE D'UNE RESSOURCE (resources/read)
+        elif methode == "resources/read":
+            uri = params.get("uri", "")
+            if uri == "wave://family-officer/doctrine":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": id_req,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "text/markdown",
+                                "text": cls.DOCTRINE_FAMILY_OFFICER
+                            }
+                        ]
+                    }
+                }
+            elif uri == "telephone://statut":
+                donnees = GestionnaireMaterielAndroid.obtenir_statut_telephone()
+                return {
+                    "jsonrpc": "2.0",
+                    "id": id_req,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "application/json",
+                                "text": json.dumps(donnees, ensure_ascii=False)
+                            }
+                        ]
+                    }
+                }
+            elif uri == "telephone://sms-wave":
+                messages = GestionnaireMaterielAndroid.lire_sms_wave(limite=20)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": id_req,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "application/json",
+                                "text": json.dumps(messages, ensure_ascii=False)
+                            }
+                        ]
+                    }
+                }
+            elif uri == "telephone://notifications":
+                notifs = GestionnaireMaterielAndroid.extraire_notifications_wave(limite=15)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": id_req,
+                    "result": {
+                        "contents": [
+                            {
+                                "uri": uri,
+                                "mimeType": "application/json",
+                                "text": json.dumps(notifs, ensure_ascii=False)
+                            }
+                        ]
+                    }
+                }
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": id_req,
+                    "error": {
+                        "code": -32602,
+                        "message": f"Ressource introuvable : {uri}"
+                    }
+                }
+
+        # 7. LISTE DES PROMPTS (prompts/list)
+        elif methode == "prompts/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": id_req,
+                "result": {
+                    "prompts": cls.PROMPTS_DISPONIBLES
+                }
+            }
+
+        # 8. OBTENTION D'UN PROMPT (prompts/get)
+        elif methode == "prompts/get":
+            nom_prompt = params.get("name")
+            args_prompt = params.get("arguments", {})
+            if nom_prompt == "family_officer_wave":
+                prenom = args_prompt.get("prenom_utilisateur", "l'Utilisateur")
+                reserve = args_prompt.get("reserve_urgence_fcfa", "25 000")
+                texte_systeme = (
+                    f"{cls.DOCTRINE_FAMILY_OFFICER}\n"
+                    f"Contexte actif : Vous conseillez {prenom}. "
+                    f"Le sanctuaire d'urgence incompressible est fixé à {reserve} FCFA."
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": id_req,
+                    "result": {
+                        "description": "Posture de Family Officer pour Wave Mobile Money",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": {
+                                    "type": "text",
+                                    "text": texte_systeme
+                                }
+                            }
+                        ]
+                    }
+                }
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": id_req,
+                    "error": {
+                        "code": -32602,
+                        "message": f"Prompt inconnu : {nom_prompt}"
+                    }
+                }
 
         # Méthode non gérée
         return {
@@ -996,6 +1287,21 @@ class GestionnaireProtocoleMCP:
                 langue = args.get("langue", "fr")
                 reussi = GestionnaireMaterielAndroid.parler_tts(texte, langue)
                 return cls._reponse_succes_mcp(id_req, {"succes": reussi, "texte": texte})
+
+            elif nom == "evaluer_impact_transfert_wave":
+                montant = int(args.get("montant_fcfa", 0))
+                numero = str(args.get("numero_destinataire", ""))
+                motif = str(args.get("motif", "Dépannage famille"))
+                categorie = str(args.get("categorie", "depannage_famille"))
+                reserve = int(args.get("reserve_minimale_fcfa", 25000))
+                res = GestionnaireMaterielAndroid.evaluer_impact_transfert_wave(
+                    montant_fcfa=montant,
+                    numero_destinataire=numero,
+                    motif=motif,
+                    categorie=categorie,
+                    reserve_minimale_fcfa=reserve
+                )
+                return cls._reponse_succes_mcp(id_req, res)
 
             else:
                 return {

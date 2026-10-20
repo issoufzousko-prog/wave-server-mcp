@@ -112,7 +112,8 @@ def traiter_ligne(ligne: str) -> Optional[Dict[str, Any]]:
                 },
                 "capabilities": {
                     "tools": {"listChanged": False},
-                    "resources": {"subscribe": False, "listChanged": False}
+                    "resources": {"subscribe": False, "listChanged": False},
+                    "prompts": {"listChanged": False}
                 }
             }
         }
