@@ -1447,13 +1447,40 @@ class GestionnaireRequetesHTTP(BaseHTTPRequestHandler):
                         spec = json.load(f)
                     hote = self.headers.get("Host")
                     if hote:
-                        proto = "https" if ("trycloudflare.com" in hote or "ngrok" in hote) else "http"
+                        proto = "https" if ("trycloudflare.com" in hote or "ngrok" in hote or "pinggy" in hote or "loca.lt" in hote) else "http"
                         spec["servers"] = [{"url": f"{proto}://{hote}", "description": "Passerelle Wave MCP active"}]
                     self._envoyer_reponse_json(spec)
                 except Exception as e:
                     self._envoyer_reponse_json({"erreur": f"Erreur lecture openapi.json : {e}"}, statut=500)
             else:
                 self._envoyer_reponse_json({"erreur": "Spécification openapi.json introuvable sur le serveur"}, statut=404)
+
+        # 10. Découverte OAuth 2.0 (RFC 8414) pour Claude.ai Remote MCP
+        elif chemin in ("/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"):
+            hote = self.headers.get("Host", "localhost:8765")
+            proto = "https" if ("trycloudflare.com" in hote or "ngrok" in hote or "pinggy" in hote or "loca.lt" in hote) else "http"
+            base = f"{proto}://{hote}"
+            self._envoyer_reponse_json({
+                "issuer": base,
+                "authorization_endpoint": f"{base}/oauth/authorize",
+                "token_endpoint": f"{base}/oauth/token",
+                "registration_endpoint": f"{base}/oauth/register",
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code", "client_credentials"],
+                "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+                "code_challenge_methods_supported": ["S256", "plain"]
+            })
+
+        # 11. Autorisation OAuth 2.0 (Redirection transparente immédiate)
+        elif chemin == "/oauth/authorize":
+            params_url = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            redirect_uri = params_url.get("redirect_uri", ["https://claude.ai/api/auth/callback"])[0]
+            state = params_url.get("state", [""])[0]
+            sep = "&" if "?" in redirect_uri else "?"
+            cible = f"{redirect_uri}{sep}code=wave_sovereign_auth_code&state={state}"
+            self.send_response(302)
+            self.send_header("Location", cible)
+            self.end_headers()
 
         else:
             self._envoyer_reponse_json({"erreur": "Route introuvable"}, statut=404)
@@ -1538,6 +1565,25 @@ class GestionnaireRequetesHTTP(BaseHTTPRequestHandler):
                 reserve_minimale_fcfa=reserve
             )
             self._envoyer_reponse_json(res)
+
+        # 9. Enregistrement dynamique client OAuth 2.0 (RFC 7591) pour Claude.ai
+        elif chemin == "/oauth/register":
+            client_id = donnees_json.get("client_name", "claude_remote_mcp").lower().replace(" ", "_")
+            self._envoyer_reponse_json({
+                "client_id": client_id,
+                "client_secret": "wave_sovereign_secret_key",
+                "client_name": donnees_json.get("client_name", "Claude Remote MCP"),
+                "redirect_uris": donnees_json.get("redirect_uris", ["https://claude.ai/api/auth/callback"])
+            }, statut=201)
+
+        # 10. Délivrance de jeton OAuth 2.0 pour Claude.ai
+        elif chemin == "/oauth/token":
+            self._envoyer_reponse_json({
+                "access_token": "wave_token_sovereign_bearer_session",
+                "token_type": "Bearer",
+                "expires_in": 315360000,
+                "scope": "mcp:all"
+            })
 
         else:
             self._envoyer_reponse_json({"erreur": "Route POST introuvable"}, statut=404)
