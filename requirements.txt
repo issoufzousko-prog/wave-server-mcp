@@ -1,0 +1,8 @@
+# ==============================================================================
+# Wave Server MCP — Dépendances Python
+# ==============================================================================
+# Note: Sur Android (Termux), le serveur 'serveur_mcp_telephone.py' s'exécute
+# UNIQUEMENT avec la bibliothèque standard Python 3 (0 dépendance pip requise).
+#
+# Ces dépendances sont optionnelles, pour le client Python ou les tests sur PC :
+httpx>=0.25.0
